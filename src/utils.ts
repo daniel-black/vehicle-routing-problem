@@ -35,9 +35,17 @@ function parseLoad(line: string) {
   const loadNumber = parseInt(tokens[0]);
   const pickup = parseLocation(tokens[1]);
   const dropoff = parseLocation(tokens[2]);
-  const time = getEuclideanDistance(pickup, dropoff);
+  const transitTime = getDriveTime(pickup, dropoff); // time from pickup to dropoff
+  const returnTime = getDriveTime(dropoff, { x: 0, y: 0 }); // time from dropoff to depot
 
-  const load: Load = { loadNumber, pickup, dropoff, time, isComplete: false };
+  const load: Load = {
+    loadNumber,
+    pickup,
+    dropoff,
+    transitTime,
+    returnTime,
+    isComplete: false,
+  };
 
   return load;
 }
@@ -56,6 +64,7 @@ function parseLocation(locationStr: string) {
   return location;
 }
 
-function getEuclideanDistance(l1: Location, l2: Location) {
+// considering the distance between two points to be the drive time in minutes
+export function getDriveTime(l1: Location, l2: Location) {
   return Math.sqrt(Math.pow(l2.x - l1.x, 2) + Math.pow(l2.y - l1.y, 2));
 }
