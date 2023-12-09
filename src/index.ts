@@ -1,155 +1,95 @@
-import { getFilePath, readProblemFile } from "./io.js";
+import { getFilePath, readProblemFile, printDriverLoads } from "./io.js";
 import { getDriveTime, getLoadsFromFileContent } from "./utils.js";
-import type { Driver, Load } from "./types.js";
+import { Driver } from "./driver.js";
+import type { Load, LoadAndDriveTimeToPickup } from "./types.js";
 
-const MAX_DRIVE_TIME = 720 as const; // 12 * 60 for max time in minutes
+// 12 * 60 for max drive time in minutes. Drivers must not drive more than MAX_DRIVE_TIME.
+const MAX_DRIVE_TIME = 720 as const;
 
-// read a file path from the command line args
-const path = getFilePath();
+main();
 
-// read the file data
-const fileContent = readProblemFile(path);
+function main() {
+  // take file path as input
+  const path = getFilePath();
+  const fileContent = readProblemFile(path);
 
-// get loads from the data
-const loads = getLoadsFromFileContent(fileContent);
+  // create loads from the file data
+  const loads = getLoadsFromFileContent(fileContent);
 
-const drivers: Driver[] = [];
+  // keep track of our drivers
+  const drivers: Driver[] = [];
 
-// while there are incomplete loads...
-while (loads.some((load) => !load.isComplete)) {
-  // start with a driver
-  const driver: Driver = {
-    currentLocation: { x: 0, y: 0 },
-    loadsCompleted: [],
-    timeDriven: 0,
-    hasReturned: false,
-  };
+  // determine which drivers take which loads
+  vehicleRouter(loads, drivers);
 
-  while (!driver.hasReturned) {
-    const nearestLoad = findNearestAvailableValidLoad(driver, loads);
+  // output results
+  printDriverLoads(drivers);
+}
 
-    if (!nearestLoad) {
-      const deliveredLoads = driver.loadsCompleted;
+function vehicleRouter(loads: ReadonlyArray<Load>, drivers: Driver[]) {
+  // the work isn't done until we've delivered every load
+  while (loads.some((load) => !load.isDelivered)) {
+    const driver = new Driver();
 
-      if (deliveredLoads.length > 0) {
-        const lastDeliveredLoadNumber =
-          deliveredLoads[deliveredLoads.length - 1];
-        const lastDeliveredLoad = loads.find(
-          (l) => l.loadNumber === lastDeliveredLoadNumber
-        );
+    while (driver.canPickupMoreLoads) {
+      const nearestLoad = findNearestCompletableLoad(driver, loads);
 
-        // add the time it takes to return from the last delivered load
-        driver.timeDriven += lastDeliveredLoad.returnTime;
-
-        // update the driver's location so they are back at the depot
-        driver.currentLocation.x = 0;
-        driver.currentLocation.y = 0;
-
-        driver.hasReturned = true; // end the driver while loop
+      if (!nearestLoad) {
+        driver.returnToDepot();
         break;
       }
+
+      driver.deliverLoad(nearestLoad.load, nearestLoad.timeFromDriverToPickup);
     }
 
-    // we have a valid nearest load
-    // add to drivers drive time
-    driver.timeDriven +=
-      nearestLoad.timeFromDriverToPickup +
-      loads[nearestLoad.indexOfLoad].transitTime; // don't include the return time bc we might still be able to get more loads
-
-    // mark load as complete and add it to drivers list of completed load load numbers
-    loads[nearestLoad.indexOfLoad].isComplete = true;
-    driver.loadsCompleted.push(loads[nearestLoad.indexOfLoad].loadNumber);
-
-    // update drivers location to be the dropoff of the nearest load
-    driver.currentLocation.x = loads[nearestLoad.indexOfLoad].dropoff.x;
-    driver.currentLocation.y = loads[nearestLoad.indexOfLoad].dropoff.y;
-  }
-
-  if (driver.timeDriven > 0 && driver.hasReturned) {
-    drivers.push(driver);
+    if (driver.isDoneWithRoute()) {
+      drivers.push(driver);
+    }
   }
 }
 
-for (let i = 0; i < drivers.length; i++) {
-  console.log("loads: ");
-  console.log(drivers[i].loadsCompleted);
-  console.log("timeDriven: ", drivers[i].timeDriven);
-  console.log();
-}
-
-type NearestLoad = {
-  indexOfLoad: number; // gives us the index into the loads array (never change order of loads array)
-  timeFromDriverToPickup: number;
-};
-
-// find the load with the nearest pickup location that could be succesfully delivered
-// either returns indexOfNearest and timeFromDriverToPickup or undefined
-function findNearestAvailableValidLoad(
+function findNearestCompletableLoad(
   driver: Driver,
-  loads: Load[]
-): NearestLoad | undefined {
-  let indexOfNearestLoad = -1;
-  let shortestTimeFromDriverToPickup = Infinity;
+  loads: ReadonlyArray<Load>
+): LoadAndDriveTimeToPickup | undefined {
+  // Returns undefined if it cannot find a nearby load that the driver could
+  // complete while staying under the MAX_DRIVE_TIME
+  let nearestLoad: LoadAndDriveTimeToPickup | undefined = undefined;
 
-  // loop through all the loads
+  const driverLocation = driver.getCurrentLocation();
+
+  // find the nearest load that the driver could complete before their MAX_DRIVE_TIME is up
   for (let i = 0; i < loads.length; i++) {
-    // ignore completed loads
-    if (loads[i].isComplete) {
+    const load = loads[i];
+
+    // skip already delivered loads
+    if (load.isDelivered) {
       continue;
     }
 
     // compute how long it would take the driver to get to the pickup location
-    const timeFromDriverToPickup = getDriveTime(
-      driver.currentLocation,
-      loads[i].pickup
-    );
+    const timeFromDriverToPickup = getDriveTime(driverLocation, load.pickup);
 
-    // keep looking if getting to the load or delivering it would take too long
-    if (
-      driver.timeDriven + timeFromDriverToPickup > MAX_DRIVE_TIME ||
-      driver.timeDriven + timeFromDriverToPickup + loads[i].transitTime >
-        MAX_DRIVE_TIME
-    ) {
-      continue;
-    }
+    const totalTimeToDeliverAndReturnToDepot =
+      driver.getTotalTimeDriven() +
+      timeFromDriverToPickup +
+      load.transitTime +
+      load.returnTime;
 
-    // keep looking if delivering the load and returning to the depot would take too long
-    if (
-      driver.timeDriven +
-        timeFromDriverToPickup +
-        loads[i].transitTime +
-        loads[i].returnTime >
-      MAX_DRIVE_TIME
-    ) {
-      continue;
-    }
-
-    // first time we find a valid, retrievable load
-    if (indexOfNearestLoad === -1) {
-      indexOfNearestLoad = i;
-      shortestTimeFromDriverToPickup = timeFromDriverToPickup;
-
-      continue;
-    }
-
-    if (timeFromDriverToPickup < shortestTimeFromDriverToPickup) {
-      indexOfNearestLoad = i;
-      shortestTimeFromDriverToPickup = timeFromDriverToPickup;
+    if (totalTimeToDeliverAndReturnToDepot <= MAX_DRIVE_TIME) {
+      if (
+        !nearestLoad ||
+        timeFromDriverToPickup < nearestLoad.timeFromDriverToPickup
+      ) {
+        // If the driver can drive to a nearby load, pick it up, deliver it, and return
+        // to the depot, then we consider that our nearest load and return it out.
+        nearestLoad = {
+          load: load,
+          timeFromDriverToPickup: timeFromDriverToPickup,
+        };
+      }
     }
   }
-
-  // didn't find a load :(
-  if (
-    indexOfNearestLoad === -1 &&
-    shortestTimeFromDriverToPickup === Infinity
-  ) {
-    return undefined;
-  }
-
-  const nearestLoad: NearestLoad = {
-    indexOfLoad: indexOfNearestLoad,
-    timeFromDriverToPickup: shortestTimeFromDriverToPickup,
-  };
 
   return nearestLoad;
 }
