@@ -1,4 +1,10 @@
+import { DEPOT_LOCATION } from "./driver.js";
 import type { Load, Location } from "./types.js";
+
+// We consider the distance between two points to be the drive time in minutes
+export function getDriveTime(l1: Location, l2: Location) {
+  return Math.sqrt(Math.pow(l2.x - l1.x, 2) + Math.pow(l2.y - l1.y, 2));
+}
 
 export function getLoadsFromFileContent(fileContent: string) {
   const lines = fileContent.split("\n");
@@ -18,11 +24,13 @@ export function getLoadsFromFileContent(fileContent: string) {
     }
   }
 
-  return loads;
+  // Don't allow the returned array to be mutated. The Load objects
+  // within the array can be mutated but the array itself cannot.
+  return loads as ReadonlyArray<Load>;
 }
 
-// line looks like: "2 (161.69338827025,10.536541785902418) (80.7723838826288,45.61928131030916)"
-function parseLoad(line: string) {
+// input string example: "2 (161.69338827025,10.536541785902418) (80.7723838826288,45.61928131030916)"
+function parseLoad(line: string): Load {
   const tokens = line.split(" ");
 
   if (tokens.length !== 3) {
@@ -35,36 +43,31 @@ function parseLoad(line: string) {
   const loadNumber = parseInt(tokens[0]);
   const pickup = parseLocation(tokens[1]);
   const dropoff = parseLocation(tokens[2]);
-  const transitTime = getDriveTime(pickup, dropoff); // time from pickup to dropoff
-  const returnTime = getDriveTime(dropoff, { x: 0, y: 0 }); // time from dropoff to depot
 
-  const load: Load = {
+  // We will need the time it takes to go from pickup to dropoff multiple times throughout
+  // the program so we compute it once and to save on computation.
+  const transitTime = getDriveTime(pickup, dropoff);
+
+  // When evaluating whether or not a driver can complete a pickup, we always have to check
+  // whether they can make it from the dropoff location back to the depot so we will compute
+  // that value once here and reuse it.
+  const returnTime = getDriveTime(dropoff, DEPOT_LOCATION);
+
+  return {
     loadNumber,
     pickup,
     dropoff,
     transitTime,
     returnTime,
-    isComplete: false,
+    isDelivered: false,
   };
-
-  return load;
 }
 
-// locationStr looks like: "(161.69338827025,10.536541785902418)"
-function parseLocation(locationStr: string) {
-  const [xStr, yStr] = locationStr
-    .substring(1, locationStr.length - 1)
-    .split(",");
-
-  const location: Location = {
+// input string example: "(161.69338827025,10.536541785902418)"
+function parseLocation(locationStr: string): Location {
+  const [xStr, yStr] = locationStr.slice(1, -1).split(",");
+  return {
     x: parseFloat(xStr),
     y: parseFloat(yStr),
   };
-
-  return location;
-}
-
-// considering the distance between two points to be the drive time in minutes
-export function getDriveTime(l1: Location, l2: Location) {
-  return Math.sqrt(Math.pow(l2.x - l1.x, 2) + Math.pow(l2.y - l1.y, 2));
 }
