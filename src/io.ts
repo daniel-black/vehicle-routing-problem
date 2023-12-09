@@ -1,5 +1,7 @@
 import { readFileSync } from "fs";
+import { Driver } from "./driver.js";
 
+// Input functions
 export function getFilePath() {
   const commandLineArgs = process.argv;
 
@@ -29,5 +31,12 @@ export function readProblemFile(path: string) {
   } catch (err) {
     console.error("Error reading the file: ", err);
     process.exit(1);
+  }
+}
+
+// Output function
+export function printDriverLoads(drivers: Driver[]): void {
+  for (let i = 0; i < drivers.length; i++) {
+    console.log(drivers[i].getFormattedLoads());
   }
 }
