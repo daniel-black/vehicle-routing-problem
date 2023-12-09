@@ -9,12 +9,10 @@ export type Load = {
   dropoff: Location;
   transitTime: number;
   returnTime: number;
-  isComplete: boolean;
+  isDelivered: boolean;
 };
 
-export type Driver = {
-  currentLocation: Location;
-  loadsCompleted: number[]; // array of loadNumbers
-  timeDriven: number;
-  hasReturned: boolean;
+export type LoadAndDriveTimeToPickup = {
+  load: Load;
+  timeFromDriverToPickup: number;
 };
